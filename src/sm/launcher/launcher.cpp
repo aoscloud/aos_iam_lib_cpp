@@ -367,7 +367,9 @@ Error Launcher::ProcessServices(const Array<ServiceInfo>& services)
 {
     LOG_DBG() << "Process services";
 
-    auto err = mServiceManager->ProcessDesiredServices(services);
+    auto serviceStatuses = MakeUnique<ServiceStatusStaticArray>(&mAllocator);
+
+    auto err = mServiceManager->ProcessDesiredServices(services, *serviceStatuses);
     if (!err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }

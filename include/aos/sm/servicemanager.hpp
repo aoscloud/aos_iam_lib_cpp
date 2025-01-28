@@ -190,9 +190,10 @@ public:
      * Processes desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    virtual Error ProcessDesiredServices(const Array<ServiceInfo>& services) = 0;
+    virtual Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) = 0;
 
     /**
      * Returns service item by service ID.
@@ -290,9 +291,10 @@ public:
      * Process desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    Error ProcessDesiredServices(const Array<ServiceInfo>& services) override;
+    Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) override;
 
     /**
      * Returns service item by service ID.
@@ -341,6 +343,10 @@ private:
     static constexpr auto cImageManifestFile = "manifest.json";
     static constexpr auto cImageBlobsFolder  = "blobs";
     static constexpr auto cAllocatorItemLen  = cServiceIDLen + cVersionLen + 1;
+
+    RetWithError<UniquePtr<ServiceInfoStaticArray>> ProcessAlreadyInstalledServices(
+        const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses);
+    Error InstallServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses);
 
     Error                                          RemoveDamagedServiceFolders(const Array<ServiceData>& services);
     Error                                          RemoveOutdatedServices(const Array<ServiceData>& services);

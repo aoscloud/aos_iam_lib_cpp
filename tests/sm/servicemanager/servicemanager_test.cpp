@@ -80,6 +80,8 @@ protected:
         FS::ClearDir(cTestRootDir);
 
         mImageHandler.Init(mServiceSpaceAllocator);
+
+        EXPECT_CALL(mDownloader, Download).WillRepeatedly(Return(ErrorEnum::eNone));
     }
 
     Config                             mConfig = CreateConfig();
@@ -251,11 +253,26 @@ TEST_F(ServiceManagerTest, ProcessDesiredServices)
 
         for (const auto& service : testItem.mData) {
             mImageHandler.SetInstallResult(FS::JoinPath(cDownloadDir, service.mServiceID), service.mImagePath);
+            mImageHandler.SetCalculateDigestResult(FS::JoinPath(service.mImagePath, "manifest.json"), "sha256:123");
         }
 
-        EXPECT_TRUE(
-            serviceManager.ProcessDesiredServices(Array<ServiceInfo>(testItem.mInfo.data(), testItem.mInfo.size()))
-                .IsNone());
+        auto serviceStatuses = std::make_unique<ServiceStatusStaticArray>();
+
+        EXPECT_TRUE(serviceManager
+                        .ProcessDesiredServices(
+                            Array<ServiceInfo>(testItem.mInfo.data(), testItem.mInfo.size()), *serviceStatuses)
+                        .IsNone());
+
+        ASSERT_EQ(serviceStatuses->Size(), testItem.mData.size()) << "Invalid service status size";
+
+        if (auto it = serviceStatuses->FindIf(
+                [](const auto& status) { return status.mStatus != ComponentStatusEnum::eInstalled; });
+            it != serviceStatuses->end()) {
+            LOG_DBG() << "Found unexpected service status: id" << it->mServiceID << ", version=" << it->mVersion
+                      << ", status=" << it->mStatus << ", err=" << it->mError;
+
+            FAIL() << "Invalid service status";
+        }
 
         ServiceDataStaticArray installedServices;
 
@@ -266,6 +283,63 @@ TEST_F(ServiceManagerTest, ProcessDesiredServices)
                 return CompareServiceData(std::get<0>(tuple), std::get<1>(tuple));
             }),
                 testItem.mData));
+    }
+}
+
+TEST_F(ServiceManagerTest, ProcessDesiredServicesOnInvalidService)
+{
+    ServiceManager serviceManager;
+
+    ASSERT_TRUE(serviceManager
+                    .Init(mConfig, mOCIManager, mDownloader, mStorage, mServiceSpaceAllocator, mDownloadSpaceAllocator,
+                        mImageHandler)
+                    .IsNone());
+
+    const auto testData = std::vector<ServiceInfo> {
+        {"service1", "provider1", "1.0.0", 0, "url", {}, 0},
+        {"service2", "provider2", "1.0.0", 0, "url", {}, 0},
+        {"service3", "provider3", "1.0.0", 0, "url", {}, 0},
+        {"service4", "provider4", "1.0.0", 0, "url", {}, 0},
+    };
+
+    for (const auto& service : testData) {
+        const auto imagePath = FS::JoinPath(cServicesDir, service.mServiceID);
+
+        mImageHandler.SetInstallResult(FS::JoinPath(cDownloadDir, service.mServiceID), imagePath);
+        mImageHandler.SetCalculateDigestResult(FS::JoinPath(imagePath, "manifest.json"), "sha256:123");
+    }
+
+    const auto desiredServices = Array<ServiceInfo>(testData.data(), testData.size());
+    auto       serviceStatuses = std::make_unique<ServiceStatusStaticArray>();
+
+    ASSERT_TRUE(serviceManager.ProcessDesiredServices(desiredServices, *serviceStatuses).IsNone());
+
+    ASSERT_EQ(serviceStatuses->Size(), testData.size()) << "Invalid service status size";
+
+    if (auto it
+        = serviceStatuses->FindIf([](const auto& status) { return status.mStatus != ComponentStatusEnum::eInstalled; });
+        it != serviceStatuses->end()) {
+        LOG_DBG() << "Found unexpected service status: id=" << it->mServiceID << ", version=" << it->mVersion
+                  << ", status=" << it->mStatus << ", err=" << it->mError;
+
+        FAIL() << "Invalid service status";
+    }
+
+    // Change hash of an installed service
+    mImageHandler.SetCalculateDigestResult(FS::JoinPath(cServicesDir, "service2", "manifest.json"), "hash-mismatch");
+
+    serviceStatuses->Clear();
+    ASSERT_TRUE(serviceManager.ProcessDesiredServices(desiredServices, *serviceStatuses).IsNone());
+
+    ASSERT_EQ(serviceStatuses->Size(), testData.size()) << "Invalid service status size";
+
+    if (auto it = serviceStatuses->FindIf([](const ServiceStatus& status) {
+            return status.mServiceID == "service2" && status.mVersion == "1.0.0"
+                && status.mStatus == ComponentStatusEnum::eError && status.mError.Is(ErrorEnum::eInvalidChecksum);
+        });
+        it == serviceStatuses->end()) {
+
+        FAIL() << "Invalid service status";
     }
 }
 

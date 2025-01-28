@@ -162,10 +162,13 @@ public:
      * Processes desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    Error ProcessDesiredServices(const Array<ServiceInfo>& services) override
+    Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) override
     {
+        (void)serviceStatuses;
+
         std::lock_guard lock {mMutex};
 
         mServicesData.clear();

@@ -562,9 +562,115 @@ struct InstanceStatus {
 using InstanceStatusStaticArray = StaticArray<InstanceStatus, cMaxNumInstances>;
 
 /**
+ * Component status type.
+ */
+class ComponentStatusType {
+public:
+    enum class Enum {
+        eUnknown,
+        ePending,
+        eDownloading,
+        eDownloaded,
+        eInstalling,
+        eInstalled,
+        eRemoving,
+        eRemoved,
+        eError,
+    };
+
+    static const Array<const char* const> GetStrings()
+    {
+        static const char* const sInstanceRunStateStrings[] = {
+            "unknown",
+            "pending",
+            "downloading",
+            "downloaded",
+            "installing",
+            "installed",
+            "removing",
+            "removed",
+            "error",
+        };
+
+        return Array<const char* const>(sInstanceRunStateStrings, ArraySize(sInstanceRunStateStrings));
+    };
+};
+
+using ComponentStatusEnum = ComponentStatusType::Enum;
+using ComponentStatus     = EnumStringer<ComponentStatusType>;
+
+/**
+ * Service status.
+ */
+struct ServiceStatus {
+    /**
+     * Default constructor.
+     */
+    ServiceStatus() = default;
+
+    /**
+     * Construct a new service status object
+     *
+     * @param serviceID service ID.
+     * @param version service version.
+     * @param status service status.
+     * @param error service error.
+     */
+    ServiceStatus(const String& serviceID, const String& version,
+        ComponentStatus status = ComponentStatusEnum::eUnknown, const Error& error = ErrorEnum::eNone)
+        : mServiceID(serviceID)
+        , mVersion(version)
+        , mStatus(status)
+        , mError(error)
+    {
+    }
+
+    /**
+     * Sets error with specified status.
+     *
+     * @param error error.
+     * @param status status.
+     */
+    void SetError(const Error& error, ComponentStatus status = ComponentStatusEnum::eError)
+    {
+        mError  = error;
+        mStatus = status;
+    }
+
+    StaticString<cServiceIDLen> mServiceID;
+    StaticString<cVersionLen>   mVersion;
+    ComponentStatus             mStatus;
+    Error                       mError;
+
+    /**
+     * Compares service status.
+     *
+     * @param service status to compare.
+     * @return bool.
+     */
+    bool operator==(const ServiceStatus& service) const
+    {
+        return mServiceID == service.mServiceID && mVersion == service.mVersion && mStatus == service.mStatus
+            && mError == service.mError;
+    }
+
+    /**
+     * Compares service status.
+     *
+     * @param service status to compare.
+     * @return bool.
+     */
+    bool operator!=(const ServiceStatus& service) const { return !operator==(service); }
+};
+
+/**
+ * Service status static array.
+ */
+using ServiceStatusStaticArray = StaticArray<ServiceStatus, cMaxNumServices>;
+
+/**
  * Service info.
  */
-
 struct ServiceInfo {
     StaticString<cServiceIDLen>       mServiceID;
     StaticString<cProviderIDLen>      mProviderID;

@@ -150,7 +150,7 @@ Error ServiceManager::Stop()
     return ErrorEnum::eNone;
 }
 
-Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services)
+Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
 {
     LockGuard lock {mMutex};
 
@@ -162,55 +162,17 @@ Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services)
         return err;
     }
 
-    auto desiredServices = MakeUnique<ServiceInfoStaticArray>(&mAllocator, services);
+    auto [desiredServices, err] = ProcessAlreadyInstalledServices(services, serviceStatuses);
+    if (!err.IsNone()) {
+        return err;
+    }
 
-    {
-        auto installedServices = MakeUnique<ServiceDataStaticArray>(&mAllocator);
-
-        if (auto err = mStorage->GetAllServices(*installedServices); !err.IsNone()) {
-            return err;
-        }
-
-        for (const auto& storageService : *installedServices) {
-            auto it = desiredServices->FindIf([&storageService](const ServiceInfo& info) {
-                return storageService.mServiceID == info.mServiceID && storageService.mVersion == info.mVersion;
-            });
-
-            if (it == desiredServices->end()) {
-                if (storageService.mState != ServiceStateEnum::eCached) {
-                    if (auto err = SetServiceState(storageService, ServiceStateEnum::eCached); !err.IsNone()) {
-                        return err;
-                    }
-                }
-
-                continue;
-            }
-
-            if (auto err = SetServiceState(storageService, ServiceStateEnum::eActive); !err.IsNone()) {
-                return err;
-            }
-
-            desiredServices->Erase(it);
-        }
+    err = InstallServices(*desiredServices, serviceStatuses);
+    if (!err.IsNone()) {
+        return err;
     }
 
     // Install new services
-
-    for (const auto& service : *desiredServices) {
-        auto err = mInstallPool.AddTask([this, &service](void*) {
-            if (auto err = InstallService(service); !err.IsNone()) {
-                LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID
-                          << ", version=" << service.mVersion << ", err=" << err;
-            }
-        });
-        if (!err.IsNone()) {
-            LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
-                      << ", err=" << err;
-        }
-    }
-
-    mInstallPool.Wait();
-    mInstallPool.Shutdown();
 
     LOG_DBG() << "Allocator: allocated=" << mAllocator.MaxAllocatedSize() << ", maxSize=" << mAllocator.MaxSize();
 #if AOS_CONFIG_THREAD_STACK_USAGE
@@ -286,7 +248,7 @@ Error ServiceManager::ValidateService(const ServiceData& service)
     }
 
     if (manifestDigest != service.mManifestDigest) {
-        return AOS_ERROR_WRAP(Error(ErrorEnum::eFailed, "manifest checksum mismatch"));
+        return AOS_ERROR_WRAP(Error(ErrorEnum::eInvalidChecksum, "manifest checksum mismatch"));
     }
 
     if (err = mImageHandler->ValidateService(service.mImagePath); !err.IsNone()) {
@@ -329,6 +291,87 @@ Error ServiceManager::RemoveItem(const String& id)
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+RetWithError<UniquePtr<ServiceInfoStaticArray>> ServiceManager::ProcessAlreadyInstalledServices(
+    const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
+{
+    auto desiredServices   = MakeUnique<ServiceInfoStaticArray>(&mAllocator, services);
+    auto installedServices = MakeUnique<ServiceDataStaticArray>(&mAllocator);
+
+    if (auto err = mStorage->GetAllServices(*installedServices); !err.IsNone()) {
+        return {{}, err};
+    }
+
+    for (const auto& storageService : *installedServices) {
+        auto it = desiredServices->FindIf([&storageService](const ServiceInfo& info) {
+            return storageService.mServiceID == info.mServiceID && storageService.mVersion == info.mVersion;
+        });
+
+        if (auto err = serviceStatuses.EmplaceBack(
+                storageService.mServiceID, storageService.mVersion, ComponentStatusEnum::eInstalled);
+            !err.IsNone()) {
+            return {{}, err};
+        }
+
+        if (it == desiredServices->end()) {
+            if (storageService.mState != ServiceStateEnum::eCached) {
+                if (auto err = SetServiceState(storageService, ServiceStateEnum::eCached); !err.IsNone()) {
+                    return {{}, err};
+                }
+            }
+
+            continue;
+        }
+
+        if (auto err = SetServiceState(storageService, ServiceStateEnum::eActive); !err.IsNone()) {
+            return {{}, err};
+        }
+
+        desiredServices->Erase(it);
+
+        if (auto err = ValidateService(storageService); !err.IsNone()) {
+            serviceStatuses.Back().SetError(err);
+        }
+    }
+
+    return {Move(desiredServices), ErrorEnum::eNone};
+}
+
+Error ServiceManager::InstallServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
+{
+    for (const auto& service : services) {
+        auto err = serviceStatuses.EmplaceBack(service.mServiceID, service.mVersion, ComponentStatusEnum::eInstalling);
+        if (!err.IsNone()) {
+            return AOS_ERROR_WRAP(err);
+        }
+
+        auto& status = serviceStatuses.Back();
+
+        err = mInstallPool.AddTask([this, &service, &status](void*) {
+            if (auto err = InstallService(service); !err.IsNone()) {
+                LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID
+                          << ", version=" << service.mVersion << ", err=" << err;
+
+                status.SetError(err);
+
+                return;
+            }
+
+            status.mStatus = ComponentStatusEnum::eInstalled;
+        });
+        if (!err.IsNone()) {
+            LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
+                      << ", err=" << err;
+
+            status.SetError(err);
+        }
+    }
+
+    mInstallPool.Wait();
+    mInstallPool.Shutdown();
+
+    return ErrorEnum::eNone;
+}
 
 Error ServiceManager::RemoveDamagedServiceFolders(const Array<ServiceData>& services)
 {

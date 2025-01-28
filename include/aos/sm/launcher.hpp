@@ -399,7 +399,8 @@ private:
 
     mutable StaticAllocator<sizeof(InstanceInfoStaticArray) + sizeof(InstanceDataStaticArray) * 2
         + sizeof(ServiceInfoStaticArray) + sizeof(LayerInfoStaticArray) + sizeof(servicemanager::ServiceDataStaticArray)
-        + sizeof(InstanceStatusStaticArray) + sizeof(servicemanager::ServiceData) + sizeof(InstanceData)>
+        + sizeof(InstanceStatusStaticArray) + sizeof(servicemanager::ServiceData) + sizeof(InstanceData)
+        + sizeof(ServiceStatusStaticArray)>
         mAllocator;
 
     bool                                      mLaunchInProgress = false;
