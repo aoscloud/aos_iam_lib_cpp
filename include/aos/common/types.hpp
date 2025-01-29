@@ -669,6 +669,78 @@ struct ServiceStatus {
 using ServiceStatusStaticArray = StaticArray<ServiceStatus, cMaxNumServices>;
 
 /**
+ * Layer status.
+ */
+struct LayerStatus {
+    /**
+     * Default constructor.
+     */
+    LayerStatus() = default;
+
+    /**
+     * Construct a new layer status object
+     *
+     * @param layerID layer ID.
+     * @param digest layer digest.
+     * @param version layer version.
+     * @param status layer status.
+     * @param error layer error.
+     */
+    LayerStatus(const String& layerID, const String& digest, const String& version,
+        ComponentStatus status = ComponentStatusEnum::eUnknown, const Error& error = ErrorEnum::eNone)
+        : mLayerID(layerID)
+        , mDigest(digest)
+        , mVersion(version)
+        , mStatus(status)
+        , mError(error)
+    {
+    }
+
+    /**
+     * Sets error with specified status.
+     *
+     * @param error error.
+     * @param status status.
+     */
+    void SetError(const Error& error, ComponentStatus status = ComponentStatusEnum::eError)
+    {
+        mError  = error;
+        mStatus = status;
+    }
+
+    StaticString<cServiceIDLen>   mLayerID;
+    StaticString<cLayerDigestLen> mDigest;
+    StaticString<cVersionLen>     mVersion;
+    ComponentStatus               mStatus;
+    Error                         mError;
+
+    /**
+     * Compares layer status.
+     *
+     * @param layer layer status to compare.
+     * @return bool.
+     */
+    bool operator==(const LayerStatus& layer) const
+    {
+        return mLayerID == layer.mLayerID && mDigest == layer.mDigest && mVersion == layer.mVersion
+            && mStatus == layer.mStatus && mError == layer.mError;
+    }
+
+    /**
+     * Compares layer status.
+     *
+     * @param layer layer status to compare.
+     * @return bool.
+     */
+    bool operator!=(const LayerStatus& layer) const { return !operator==(layer); }
+};
+
+/**
+ * Layer status static array.
+ */
+using LayerStatusStaticArray = StaticArray<LayerStatus, cMaxNumLayers>;
+
+/**
  * Service info.
  */
 struct ServiceInfo {

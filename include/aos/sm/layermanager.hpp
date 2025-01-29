@@ -49,6 +49,7 @@ using LayerState     = EnumStringer<LayerStateType>;
  */
 struct LayerData {
     StaticString<cLayerDigestLen> mLayerDigest;
+    StaticString<cLayerDigestLen> mUnpackedLayerDigest;
     StaticString<cLayerIDLen>     mLayerID;
     StaticString<cVersionLen>     mVersion;
     StaticString<cFilePathLen>    mPath;
@@ -65,8 +66,9 @@ struct LayerData {
      */
     bool operator==(const LayerData& layer) const
     {
-        return mLayerDigest == layer.mLayerDigest && mLayerID == layer.mLayerID && mVersion == layer.mVersion
-            && mPath == layer.mPath && mOSVersion == layer.mOSVersion && mState == layer.mState && mSize == layer.mSize;
+        return mLayerDigest == layer.mLayerDigest && mUnpackedLayerDigest == layer.mUnpackedLayerDigest
+            && mLayerID == layer.mLayerID && mVersion == layer.mVersion && mPath == layer.mPath
+            && mOSVersion == layer.mOSVersion && mState == layer.mState && mSize == layer.mSize;
     }
 
     /**
@@ -150,9 +152,10 @@ public:
      * Processes desired layers.
      *
      * @param desiredLayers desired layers.
+     * @param layerStatuses[out] layer statuses.
      * @return Error.
      */
-    virtual Error ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers) = 0;
+    virtual Error ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers, Array<LayerStatus>& layerStatuses) = 0;
 
     /**
      * Validates layer.
@@ -225,9 +228,10 @@ public:
      * Processes desired layers.
      *
      * @param desiredLayers desired layers.
+     * @param layerStatuses[out] layer statuses.
      * @return Error.
      */
-    Error ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers) override;
+    Error ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers, Array<LayerStatus>& layerStatuses) override;
 
     /**
      * Validates layer.
@@ -257,7 +261,8 @@ private:
     Error SetLayerState(const LayerData& layer, LayerState state);
     Error RemoveOutdatedLayers();
     Error RemoveLayer(const LayerData& layer);
-    Error UpdateCachedLayers(const Array<LayerData>& stored, Array<aos::LayerInfo>& result);
+    Error UpdateCachedLayers(
+        const Array<LayerData>& stored, Array<LayerStatus>& statuses, Array<aos::LayerInfo>& result);
     Error InstallLayer(const aos::LayerInfo& layer);
 
     Config                             mConfig                 = {};

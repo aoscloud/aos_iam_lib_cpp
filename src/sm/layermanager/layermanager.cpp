@@ -16,10 +16,8 @@ namespace aos::sm::layermanager {
 
 namespace {
 
-LayerData CreateLayerData(const LayerInfo& layer, const size_t size, const String& path)
+void CreateLayerData(const LayerInfo& layer, const size_t size, const String& path, LayerData& layerData)
 {
-    LayerData layerData = {};
-
     layerData.mLayerID     = layer.mLayerID;
     layerData.mLayerDigest = layer.mLayerDigest;
     layerData.mVersion     = layer.mVersion;
@@ -27,8 +25,6 @@ LayerData CreateLayerData(const LayerInfo& layer, const size_t size, const Strin
     layerData.mSize        = size;
     layerData.mState       = LayerStateEnum::eActive;
     layerData.mTimestamp   = Time::Now();
-
-    return layerData;
 }
 
 void AcceptAllocatedSpace(spaceallocator::SpaceItf* space)
@@ -145,7 +141,7 @@ Error LayerManager::GetLayer(const String& digest, LayerData& layer) const
     return mStorage->GetLayer(digest, layer);
 }
 
-Error LayerManager::ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers)
+Error LayerManager::ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers, Array<LayerStatus>& layerStatuses)
 {
     LockGuard lock {mMutex};
 
@@ -159,7 +155,7 @@ Error LayerManager::ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers)
 
     auto layersToInstall = MakeUnique<LayerInfoStaticArray>(&mAllocator, desiredLayers);
 
-    if (auto err = UpdateCachedLayers(*storageLayers, *layersToInstall); !err.IsNone()) {
+    if (auto err = UpdateCachedLayers(*storageLayers, layerStatuses, *layersToInstall); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }
 
@@ -168,15 +164,25 @@ Error LayerManager::ProcessDesiredLayers(const Array<LayerInfo>& desiredLayers)
     }
 
     for (const auto& layer : *layersToInstall) {
-        auto err = mInstallPool.AddTask([this, &layer](void*) {
+        auto err = layerStatuses.PushBack(
+            {layer.mLayerID, layer.mLayerDigest, layer.mVersion, ComponentStatusEnum::eInstalled});
+        if (!err.IsNone()) {
+            return AOS_ERROR_WRAP(err);
+        }
+
+        err = mInstallPool.AddTask([this, &layer, status = &layerStatuses.Back()](void*) {
             if (auto err = InstallLayer(layer); !err.IsNone()) {
                 LOG_ERR() << "Failed to install layer: id=" << layer.mLayerID << ", version=" << layer.mVersion
                           << ", digest=" << layer.mLayerDigest << ", err=" << err;
+
+                status->SetError(err, ComponentStatusEnum::eError);
             }
         });
         if (!err.IsNone()) {
             LOG_ERR() << "Failed to add layer install task: id=" << layer.mLayerID << ", version=" << layer.mVersion
                       << ", digest=" << layer.mLayerDigest << ", err=" << err;
+
+            layerStatuses.Back().SetError(err, ComponentStatusEnum::eError);
         }
     }
 
@@ -208,8 +214,8 @@ Error LayerManager::ValidateLayer(const LayerData& layer)
         return AOS_ERROR_WRAP(err);
     }
 
-    if (digest != layer.mLayerDigest) {
-        LOG_ERR() << "Layer digest mismatch: digest=" << layer.mLayerDigest << ", calculatedDigest=" << digest;
+    if (digest != layer.mUnpackedLayerDigest) {
+        LOG_ERR() << "Layer digest mismatch: digest=" << layer.mUnpackedLayerDigest << ", calculatedDigest=" << digest;
 
         return ErrorEnum::eInvalidChecksum;
     }
@@ -389,7 +395,8 @@ Error LayerManager::RemoveLayer(const LayerData& layer)
     return ErrorEnum::eNone;
 }
 
-Error LayerManager::UpdateCachedLayers(const Array<LayerData>& stored, Array<LayerInfo>& result)
+Error LayerManager::UpdateCachedLayers(
+    const Array<LayerData>& stored, Array<LayerStatus>& statuses, Array<LayerInfo>& result)
 {
     LOG_DBG() << "Update cached layers";
 
@@ -397,6 +404,16 @@ Error LayerManager::UpdateCachedLayers(const Array<LayerData>& stored, Array<Lay
         auto layer = result.FindIf([&storageLayer](const auto& desiredLayer) {
             return storageLayer.mLayerDigest == desiredLayer.mLayerDigest;
         });
+
+        if (auto err = statuses.EmplaceBack(storageLayer.mLayerID, storageLayer.mLayerDigest, storageLayer.mVersion,
+                ComponentStatusEnum::eInstalled);
+            !err.IsNone()) {
+            return AOS_ERROR_WRAP(err);
+        }
+
+        if (auto err = ValidateLayer(storageLayer); !err.IsNone()) {
+            statuses.Back().SetError(err, ComponentStatusEnum::eError);
+        }
 
         if (layer != result.end()) {
             if (storageLayer.mState == LayerStateEnum::eCached) {
@@ -468,7 +485,12 @@ Error LayerManager::InstallLayer(const LayerInfo& layer)
     }
 
     auto layerData = MakeUnique<LayerData>(&mAllocator);
-    *layerData     = CreateLayerData(layer, unpackedSpace->Size(), storeLayerPath);
+    CreateLayerData(layer, unpackedSpace->Size(), storeLayerPath, *layerData);
+
+    Tie(layerData->mUnpackedLayerDigest, err) = mImageHandler->CalculateDigest(storeLayerPath);
+    if (!err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
 
     if (err = mStorage->AddLayer(*layerData); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);

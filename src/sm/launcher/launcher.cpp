@@ -381,7 +381,9 @@ Error Launcher::ProcessLayers(const Array<LayerInfo>& layers)
 {
     LOG_DBG() << "Process layers";
 
-    auto err = mLayerManager->ProcessDesiredLayers(layers);
+    auto layerStatuses = MakeUnique<LayerStatusStaticArray>(&mAllocator);
+
+    auto err = mLayerManager->ProcessDesiredLayers(layers, *layerStatuses);
     if (!err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }

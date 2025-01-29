@@ -153,17 +153,20 @@ public:
      * Processes desired layers.
      *
      * @param desiredLayers desired layers.
+     * @param layerStatuses[out] layer statuses.
      * @return Error.
      */
-    Error ProcessDesiredLayers(const Array<aos::LayerInfo>& desiredLayers) override
+    Error ProcessDesiredLayers(const Array<aos::LayerInfo>& desiredLayers, Array<LayerStatus>& layerStatuses) override
     {
+        (void)layerStatuses;
+
         std::lock_guard lock {mMutex};
 
         mLayersData.clear();
 
         std::transform(
             desiredLayers.begin(), desiredLayers.end(), std::back_inserter(mLayersData), [](const LayerInfo& layer) {
-                return LayerData {layer.mLayerDigest, layer.mLayerID, layer.mVersion,
+                return LayerData {layer.mLayerDigest, layer.mLayerDigest, layer.mLayerID, layer.mVersion,
                     FS::JoinPath("/aos/layers", layer.mLayerDigest), "", Time::Now(), LayerStateEnum::eActive, 0};
             });
 

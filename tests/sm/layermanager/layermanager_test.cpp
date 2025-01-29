@@ -113,6 +113,7 @@ protected:
         const StaticString<cFilePathLen> archivePath
             = (uriPrefix == "file://") ? layerID : FS::JoinPath(cDownloadDir, layer.mLayerDigest);
 
+        EXPECT_TRUE(mImageHandler.SetCalculateDigestResult(layerPath, layer.mLayerDigest).IsNone());
         EXPECT_TRUE(mImageHandler.SetInstallResult(archivePath, layerPath).IsNone());
 
         return layer;
@@ -292,9 +293,16 @@ TEST_F(LayerManagerTest, ProcessDesiredLayers)
     for (const auto& testCase : testCases) {
 
         auto desiredLayers = CreateAosLayers(testCase.mDesiredLayers);
+        auto layerStatuses = std::make_unique<LayerStatusStaticArray>();
 
-        auto err = mManager.ProcessDesiredLayers(desiredLayers);
+        auto err = mManager.ProcessDesiredLayers(desiredLayers, *layerStatuses);
         ASSERT_TRUE(err.IsNone()) << err.Message();
+
+        if (auto it = layerStatuses->FindIf(
+                [](const auto& status) { return status.mStatus != ComponentStatusEnum::eInstalled; });
+            it != layerStatuses->end()) {
+            FAIL() << "Invalid layer status";
+        }
 
         StaticArray<LayerData, 4> dbLayers;
 
@@ -307,6 +315,37 @@ TEST_F(LayerManagerTest, ProcessDesiredLayers)
             }) != dbLayers.end())
                 << "Layer " << expectedLayer << " is not installed";
         }
+    }
+}
+
+TEST_F(LayerManagerTest, ProcessDesiredLayersOnInvalidLayer)
+{
+    InitTest();
+
+    const auto desiredLayers = CreateAosLayers({"layer1", "layer2", "layer3"});
+    auto       layerStatuses = std::make_unique<LayerStatusStaticArray>();
+
+    ASSERT_TRUE(mManager.ProcessDesiredLayers(desiredLayers, *layerStatuses).IsNone());
+
+    if (auto it
+        = layerStatuses->FindIf([](const auto& status) { return status.mStatus != ComponentStatusEnum::eInstalled; });
+        it != layerStatuses->end() || layerStatuses->Size() != desiredLayers.Size()) {
+        FAIL() << "Invalid layer status";
+    }
+
+    // Change hash of an installed layer
+    mImageHandler.SetCalculateDigestResult(FS::JoinPath(cLayersDir, "sha256", "layer2"), "hash-mismatch");
+
+    layerStatuses->Clear();
+
+    ASSERT_TRUE(mManager.ProcessDesiredLayers(desiredLayers, *layerStatuses).IsNone());
+
+    if (auto it = layerStatuses->FindIf([](const LayerStatus& status) {
+            return status.mStatus == ComponentStatusEnum::eError && status.mError.Is(ErrorEnum::eInvalidChecksum)
+                && status.mDigest == "sha256:layer2";
+        });
+        it == layerStatuses->end()) {
+        FAIL() << "Expected layer status not found";
     }
 }
 
