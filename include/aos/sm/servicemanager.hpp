@@ -230,6 +230,14 @@ public:
     virtual Error ValidateService(const ServiceData& service) = 0;
 
     /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    virtual Error RemoveService(const ServiceData& service) = 0;
+
+    /**
      * Destroys storage interface.
      */
     virtual ~ServiceManagerItf() = default;
@@ -331,6 +339,14 @@ public:
     Error ValidateService(const ServiceData& service) override;
 
     /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    Error RemoveService(const ServiceData& service) override;
+
+    /**
      * Removes item.
      *
      * @param id item id.
@@ -350,7 +366,7 @@ private:
 
     Error                                          RemoveDamagedServiceFolders(const Array<ServiceData>& services);
     Error                                          RemoveOutdatedServices(const Array<ServiceData>& services);
-    Error                                          RemoveService(const ServiceData& service);
+    Error                                          RemoveServiceFromSystem(const ServiceData& service);
     Error                                          InstallService(const ServiceInfo& service);
     Error                                          SetServiceState(const ServiceData& service, ServiceState state);
     RetWithError<StaticString<cFilePathLen>>       DigestToPath(const String& imagePath, const String& digest);

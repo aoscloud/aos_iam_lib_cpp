@@ -258,6 +258,28 @@ Error ServiceManager::ValidateService(const ServiceData& service)
     return ErrorEnum::eNone;
 }
 
+Error ServiceManager::RemoveService(const ServiceData& service)
+{
+    if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
+    if (service.mState == ServiceStateEnum::eCached) {
+        auto [allocationId, err] = FormatAllocatorItemID(service);
+
+        if (!err.IsNone()) {
+            LOG_ERR() << "Can't format allocator item ID: serviceID=" << service.mServiceID
+                      << ", version=" << service.mVersion << ", err=" << err;
+        } else {
+            mServiceSpaceAllocator->RestoreOutdatedItem(allocationId);
+        }
+    }
+
+    mServiceSpaceAllocator->FreeSpace(service.mSize);
+
+    return ErrorEnum::eNone;
+}
+
 Error ServiceManager::RemoveItem(const String& id)
 {
     StaticArray<StaticString<Max(cServiceIDLen, cVersionLen)>, 2> splitted;
@@ -273,16 +295,13 @@ Error ServiceManager::RemoveItem(const String& id)
 
     mStorage->GetServiceVersions(serviceID, *services);
 
-    for (const auto& service : *services) {
-        if (service.mVersion == version) {
-            if (auto err = FS::RemoveAll(service.mImagePath); !err.IsNone()) {
-                return AOS_ERROR_WRAP(err);
-            }
+    auto it = services->FindIf([&version](const ServiceData& service) { return service.mVersion == version; });
+    if (it == services->end()) {
+        return AOS_ERROR_WRAP(ErrorEnum::eNotFound);
+    }
 
-            if (auto err = RemoveService(service); !err.IsNone()) {
-                return AOS_ERROR_WRAP(err);
-            }
-        }
+    if (auto err = RemoveServiceFromSystem(*it); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
     }
 
     return ErrorEnum::eNone;
@@ -384,7 +403,7 @@ Error ServiceManager::RemoveDamagedServiceFolders(const Array<ServiceData>& serv
 
         LOG_WRN() << "Service missing: imagePath=" << service.mImagePath;
 
-        if (auto err = RemoveService(service); !err.IsNone()) {
+        if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
             return AOS_ERROR_WRAP(err);
         }
     }
@@ -424,7 +443,7 @@ Error ServiceManager::RemoveOutdatedServices(const Array<ServiceData>& services)
 
         LOG_DBG() << "Service outdated: serviceID=" << service.mServiceID << ", version=" << service.mVersion;
 
-        if (auto err = RemoveService(service); !err.IsNone()) {
+        if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
             return AOS_ERROR_WRAP(err);
         }
 
@@ -441,27 +460,14 @@ Error ServiceManager::RemoveOutdatedServices(const Array<ServiceData>& services)
     return ErrorEnum::eNone;
 }
 
-Error ServiceManager::RemoveService(const ServiceData& service)
+Error ServiceManager::RemoveServiceFromSystem(const ServiceData& service)
 {
-    LOG_INF() << "Remove service: serviceID=" << service.mServiceID << ", providerID=" << service.mProviderID
-              << ", version=" << service.mVersion << ", path=" << service.mImagePath;
+    LOG_DBG() << "Remove service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
+              << ", path=" << service.mImagePath;
 
     if (auto err = FS::RemoveAll(service.mImagePath); !err.IsNone()) {
-        err = AOS_ERROR_WRAP(err);
+        return AOS_ERROR_WRAP(err);
     }
-
-    if (service.mState == ServiceStateEnum::eCached) {
-        auto [allocationId, err] = FormatAllocatorItemID(service);
-
-        if (!err.IsNone()) {
-            LOG_ERR() << "Can't format allocator item ID: serviceID=" << service.mServiceID
-                      << ", version=" << service.mVersion << ", err=" << err;
-        } else {
-            mServiceSpaceAllocator->RestoreOutdatedItem(allocationId);
-        }
-    }
-
-    mServiceSpaceAllocator->FreeSpace(service.mSize);
 
     if (auto err = mStorage->RemoveService(service.mServiceID, service.mVersion); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);

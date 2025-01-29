@@ -343,6 +343,47 @@ TEST_F(ServiceManagerTest, ProcessDesiredServicesOnInvalidService)
     }
 }
 
+TEST_F(ServiceManagerTest, RemoveService)
+{
+    ServiceManager serviceManager;
+
+    ASSERT_TRUE(serviceManager
+                    .Init(mConfig, mOCIManager, mDownloader, mStorage, mServiceSpaceAllocator, mDownloadSpaceAllocator,
+                        mImageHandler)
+                    .IsNone());
+
+    const auto testData = std::vector<ServiceInfo> {
+        {"service1", "provider1", "1.0.0", 0, "url", {}, 0},
+        {"service2", "provider2", "1.0.0", 0, "url", {}, 0},
+        {"service3", "provider3", "1.0.0", 0, "url", {}, 0},
+        {"service4", "provider4", "1.0.0", 0, "url", {}, 0},
+    };
+
+    for (const auto& service : testData) {
+        const auto imagePath = FS::JoinPath(cServicesDir, service.mServiceID);
+
+        mImageHandler.SetInstallResult(FS::JoinPath(cDownloadDir, service.mServiceID), imagePath);
+        mImageHandler.SetCalculateDigestResult(FS::JoinPath(imagePath, "manifest.json"), "sha256:123");
+    }
+
+    const auto desiredServices = Array<ServiceInfo>(testData.data(), testData.size());
+    auto       serviceStatuses = std::make_unique<ServiceStatusStaticArray>();
+
+    ASSERT_TRUE(serviceManager.ProcessDesiredServices(desiredServices, *serviceStatuses).IsNone());
+
+    auto services = std::make_unique<ServiceDataStaticArray>();
+    ASSERT_TRUE(mStorage.GetAllServices(*services).IsNone());
+    ASSERT_EQ(services->Size(), testData.size());
+
+    for (const auto& service : *services) {
+        ASSERT_TRUE(serviceManager.RemoveService(service).IsNone());
+    }
+
+    services->Clear();
+    ASSERT_TRUE(mStorage.GetAllServices(*services).IsNone());
+    ASSERT_TRUE(services->IsEmpty());
+}
+
 TEST_F(ServiceManagerTest, GetImageParts)
 {
     ServiceManager serviceManager;

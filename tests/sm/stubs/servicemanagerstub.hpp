@@ -251,6 +251,19 @@ public:
         return ErrorEnum::eNone;
     }
 
+    /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    Error RemoveService(const ServiceData& service) override
+    {
+        (void)service;
+
+        return ErrorEnum::eNone;
+    }
+
 private:
     std::mutex               mMutex;
     std::vector<ServiceData> mServicesData;
