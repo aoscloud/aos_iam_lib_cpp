@@ -166,6 +166,14 @@ public:
     virtual Error ValidateLayer(const LayerData& layer) = 0;
 
     /**
+     * Removes layer.
+     *
+     * @param layer layer to remove.
+     * @return Error.
+     */
+    virtual Error RemoveLayer(const LayerData& layer) = 0;
+
+    /**
      *  Destructor.
      */
     virtual ~LayerManagerItf() = default;
@@ -242,6 +250,14 @@ public:
     Error ValidateLayer(const LayerData& layer) override;
 
     /**
+     * Removes layer.
+     *
+     * @param layer layer to remove.
+     * @return Error.
+     */
+    Error RemoveLayer(const LayerData& layer) override;
+
+    /**
      * Removes item.
      *
      * @param id item id.
@@ -260,7 +276,7 @@ private:
     Error SetOutdatedLayers();
     Error SetLayerState(const LayerData& layer, LayerState state);
     Error RemoveOutdatedLayers();
-    Error RemoveLayer(const LayerData& layer);
+    Error RemoveLayerFromSystem(const LayerData& layer);
     Error UpdateCachedLayers(
         const Array<LayerData>& stored, Array<LayerStatus>& statuses, Array<aos::LayerInfo>& result);
     Error InstallLayer(const aos::LayerInfo& layer);

@@ -180,7 +180,7 @@ TEST_F(LayerManagerTest, GetLayerInfoByDigest)
     EXPECT_EQ(result.mLayerDigest, dbLayer.mLayerDigest);
 }
 
-TEST_F(LayerManagerTest, RemoveLayer)
+TEST_F(LayerManagerTest, RemoveItem)
 {
     InitTest();
 
@@ -347,6 +347,37 @@ TEST_F(LayerManagerTest, ProcessDesiredLayersOnInvalidLayer)
         it == layerStatuses->end()) {
         FAIL() << "Expected layer status not found";
     }
+}
+
+TEST_F(LayerManagerTest, RemoveLayer)
+{
+    InitTest();
+
+    const auto desiredLayers = CreateAosLayers({"layer1", "layer2", "layer3"});
+    auto       layerStatuses = std::make_unique<LayerStatusStaticArray>();
+
+    ASSERT_TRUE(mManager.ProcessDesiredLayers(desiredLayers, *layerStatuses).IsNone());
+
+    if (auto it
+        = layerStatuses->FindIf([](const auto& status) { return status.mStatus != ComponentStatusEnum::eInstalled; });
+        it != layerStatuses->end() || layerStatuses->Size() != desiredLayers.Size()) {
+        FAIL() << "Invalid layer status";
+    }
+
+    auto layers = std::make_unique<LayerDataStaticArray>();
+
+    ASSERT_TRUE(mStorage.GetAllLayers(*layers).IsNone());
+    ASSERT_EQ(layers->Size(), desiredLayers.Size());
+
+    for (const auto& layer : *layers) {
+        ASSERT_TRUE(mManager.RemoveLayer(layer).IsNone());
+    }
+
+    layers->Clear();
+
+    ASSERT_TRUE(mStorage.GetAllLayers(*layers).IsNone());
+
+    EXPECT_TRUE(layers->IsEmpty());
 }
 
 } // namespace aos::sm::layermanager

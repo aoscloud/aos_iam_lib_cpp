@@ -223,6 +223,19 @@ Error LayerManager::ValidateLayer(const LayerData& layer)
     return ErrorEnum::eNone;
 }
 
+Error LayerManager::RemoveLayer(const LayerData& layer)
+{
+    if (auto err = RemoveLayerFromSystem(layer); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
+    if (auto err = mLayerSpaceAllocator->RestoreOutdatedItem(layer.mLayerDigest); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
+    return ErrorEnum::eNone;
+}
+
 Error LayerManager::RemoveItem(const String& id)
 {
     LOG_DBG() << "Remove item: id=" << id;
@@ -233,7 +246,7 @@ Error LayerManager::RemoveItem(const String& id)
         return AOS_ERROR_WRAP(err);
     }
 
-    if (auto err = RemoveLayer(layer); !err.IsNone()) {
+    if (auto err = RemoveLayerFromSystem(layer); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }
 
@@ -258,7 +271,7 @@ Error LayerManager::RemoveDamagedLayerFolders()
         if (auto [exists, err] = FS::DirExist(layer.mPath); !err.IsNone() || !exists) {
             LOG_WRN() << "Layer folder does not exist: path=" << layer.mPath;
 
-            if (auto removeErr = RemoveLayer(layer); !removeErr.IsNone()) {
+            if (auto removeErr = RemoveLayerFromSystem(layer); !removeErr.IsNone()) {
                 return AOS_ERROR_WRAP(removeErr);
             }
         }
@@ -365,7 +378,7 @@ Error LayerManager::RemoveOutdatedLayers()
             continue;
         }
 
-        if (auto err = RemoveLayer(layer); !err.IsNone()) {
+        if (auto err = RemoveLayerFromSystem(layer); !err.IsNone()) {
             return AOS_ERROR_WRAP(err);
         }
 
@@ -377,7 +390,7 @@ Error LayerManager::RemoveOutdatedLayers()
     return ErrorEnum::eNone;
 }
 
-Error LayerManager::RemoveLayer(const LayerData& layer)
+Error LayerManager::RemoveLayerFromSystem(const LayerData& layer)
 {
     LOG_DBG() << "Remove layer: id=" << layer.mLayerID << ", version=" << layer.mVersion
               << ", digest=" << layer.mLayerDigest << ", path=" << layer.mPath;

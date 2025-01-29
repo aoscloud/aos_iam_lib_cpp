@@ -186,6 +186,19 @@ public:
         return ErrorEnum::eNone;
     }
 
+    /**
+     * Removes layer.
+     *
+     * @param layer layer to remove.
+     * @return Error.
+     */
+    Error RemoveLayer(const LayerData& layer) override
+    {
+        (void)layer;
+
+        return ErrorEnum::eNone;
+    }
+
 private:
     mutable std::mutex     mMutex;
     std::vector<LayerData> mLayersData;
