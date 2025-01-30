@@ -18,14 +18,160 @@
 namespace aos {
 
 /**
- * Base type for a time duration in nanoseconds. Can also be negative to set a point back in time.
- */
-using Duration = int64_t;
-
-/**
  * Size of a time in string representation.
  */
 const auto cTimeStrLen = AOS_CONFIG_TIME_STR_LEN;
+
+/**
+ * Base type for a time duration in nanoseconds. Can also be negative to set a point back in time.
+ */
+class Duration {
+public:
+    /**
+     * Default constructor.
+     */
+    constexpr Duration() = default;
+
+    // cppcheck-suppress noExplicitConstructor
+    /**
+     * Constructs object instance.
+     *
+     * @param duration duration in nanoseconds.
+     */
+    constexpr Duration(int64_t duration)
+        : mDuration(duration)
+    {
+    }
+
+    /**
+     * Returns duration in nanoseconds.
+     *
+     * @result int64_t.
+     */
+    constexpr int64_t Count() const { return mDuration; }
+
+    /**
+     * Changes sign of the duration.
+     *
+     * @result Duration.
+     */
+    constexpr Duration operator-() const { return -mDuration; }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator==(const Duration& obj) const { return mDuration == obj.mDuration; }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator!=(const Duration& obj) const { return !operator==(obj); }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator<(const Duration& obj) const { return mDuration < obj.mDuration; }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator<=(const Duration& obj) const { return mDuration <= obj.mDuration; }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator>(const Duration& obj) const { return mDuration > obj.mDuration; }
+
+    /**
+     * Compares two durations.
+     *
+     * @param obj duration to compare with.
+     * @result bool.
+     */
+    bool operator>=(const Duration& obj) const { return mDuration >= obj.mDuration; }
+
+    /**
+     * Returns ISO 8601 duration string representation.
+     *
+     * @return StaticString<cTimeStrLen>
+     */
+    StaticString<cTimeStrLen> ToISO8601String() const;
+
+    /**
+     * Logs duration.
+     *
+     * @param log log object.
+     * @param duration duration.
+     * @return Log&.
+     */
+    friend Log& operator<<(Log& log, const Duration& duration) { return log << duration.ToISO8601String(); }
+
+private:
+    int64_t mDuration = 0;
+};
+
+/**
+ * Adds two durations and returns result as a new object.
+ *
+ * @param lhs left hand side duration.
+ * @param rhs right hand side duration.
+ * @result Duration.
+ */
+constexpr Duration operator+(const Duration& lhs, const Duration& rhs)
+{
+    return lhs.Count() + rhs.Count();
+}
+
+/**
+ * Subtracts two durations and returns result as a new object.
+ *
+ * @param lhs left hand side duration.
+ * @param rhs right hand side duration.
+ * @result Duration.
+ */
+constexpr Duration operator-(const Duration& lhs, const Duration& rhs)
+{
+    return lhs.Count() - rhs.Count();
+}
+
+/**
+ * Multiplies two durations and returns result as a new object.
+ *
+ * @param lhs left hand side duration.
+ * @param rhs right hand side duration.
+ * @result Duration.
+ */
+constexpr Duration operator*(const Duration& lhs, const Duration& rhs)
+{
+    return lhs.Count() * rhs.Count();
+}
+
+/**
+ * Divides two durations and returns result as a new object.
+ *
+ * @param lhs left hand side duration.
+ * @param rhs right hand side duration.
+ * @result Duration.
+ */
+constexpr Duration operator/(const Duration& lhs, const Duration& rhs)
+{
+    return lhs.Count() / rhs.Count();
+}
 
 /**
  * An object specifying a time instant.
@@ -41,7 +187,10 @@ public:
     static constexpr Duration cSeconds      = 1000 * cMilliseconds;
     static constexpr Duration cMinutes      = 60 * cSeconds;
     static constexpr Duration cHours        = 60 * cMinutes;
+    static constexpr Duration cDay          = 24 * cHours;
+    static constexpr Duration cWeek         = 7 * cDay;
     static constexpr Duration cYear         = 31556925974740 * cMicroseconds;
+    static constexpr Duration cMonth        = cYear / 12;
 
     /**
      * Constructs object instance
@@ -101,14 +250,14 @@ public:
     {
         auto time = mTime;
 
-        int64_t nsec = time.tv_nsec + duration;
+        int64_t nsec = time.tv_nsec + duration.Count();
 
-        time.tv_sec += nsec / cSeconds;
-        time.tv_nsec = nsec % cSeconds;
+        time.tv_sec += nsec / cSeconds.Count();
+        time.tv_nsec = nsec % cSeconds.Count();
 
         // sign of the remainder implementation defined => correct if negative
         if (time.tv_nsec < 0) {
-            time.tv_nsec += cSeconds;
+            time.tv_nsec += cSeconds.Count();
             time.tv_sec--;
         }
 
@@ -136,7 +285,7 @@ public:
      */
     uint64_t UnixNano() const
     {
-        uint64_t nsec = mTime.tv_nsec + mTime.tv_sec * cSeconds;
+        uint64_t nsec = mTime.tv_nsec + mTime.tv_sec * cSeconds.Count();
 
         return nsec;
     }

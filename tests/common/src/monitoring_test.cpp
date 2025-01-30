@@ -415,13 +415,13 @@ TEST_F(MonitoringTest, GetNodeMonitoringData)
         "node1", "type1", "name1", NodeStatusEnum::eProvisioned, "linux", {}, nodePartitions, {}, 10000, 8192};
 
     AlertRules alertRules;
-    alertRules.mCPU.SetValue(AlertRulePercents {10, 20, Time::cMilliseconds});
-    alertRules.mRAM.SetValue(AlertRulePercents {20, 30, Time::cMilliseconds});
-    alertRules.mDownload.SetValue(AlertRulePoints {10, 20, Time::cMilliseconds});
-    alertRules.mUpload.SetValue(AlertRulePoints {10, 20, Time::cMilliseconds});
+    alertRules.mCPU.SetValue(AlertRulePercents {Time::cMilliseconds, 10, 20});
+    alertRules.mRAM.SetValue(AlertRulePercents {Time::cMilliseconds, 20, 30});
+    alertRules.mDownload.SetValue(AlertRulePoints {Time::cMilliseconds, 10, 20});
+    alertRules.mUpload.SetValue(AlertRulePoints {Time::cMilliseconds, 10, 20});
 
     for (const auto& partition : nodePartitionsInfo) {
-        ASSERT_TRUE(alertRules.mPartitions.PushBack(PartitionAlertRule {10, 20, Time::cMilliseconds, partition.mName})
+        ASSERT_TRUE(alertRules.mPartitions.PushBack(PartitionAlertRule {Time::cMilliseconds, 10, 20, partition.mName})
                         .IsNone());
     }
 

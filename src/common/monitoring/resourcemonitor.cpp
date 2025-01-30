@@ -46,7 +46,8 @@ Error ResourceMonitor::Init(const Config& config, iam::nodeinfoprovider::NodeInf
 
     assert(mConfig.mPollPeriod > 0);
 
-    if (auto err = mAverage.Init(nodeInfo->mPartitions, mConfig.mAverageWindow / mConfig.mPollPeriod); !err.IsNone()) {
+    if (auto err = mAverage.Init(nodeInfo->mPartitions, mConfig.mAverageWindow.Count() / mConfig.mPollPeriod.Count());
+        !err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }
 
