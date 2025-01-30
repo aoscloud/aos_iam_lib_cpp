@@ -18,6 +18,32 @@ private:
     void SetUp() override { test::InitLog(); }
 };
 
+TEST_F(TimeTest, DurationToISO8601String)
+{
+    struct TestCase {
+        Duration    duration;
+        const char* expected;
+    } testCases[] = {
+        {-6 * Time::cDay, "-P6D"},
+        {Time::cWeek, "P1W"},
+        {2 * Time::cWeek, "P2W"},
+        {Time::cWeek - Time::cDay, "P6D"},
+        {Time::cMonth, "P1M"},
+        {Time::cYear, "P1Y"},
+        {Time::cYear + Time::cMonth + Time::cWeek + Time::cDay + Time::cHours, "P1Y1M1W1DT1H"},
+        {Duration(0), "PT0S"},
+        {Duration(1), "PT0.000000001S"},
+        {Time::cMinutes + Time::cSeconds, "PT1M1S"},
+        {Time::cMinutes + 32 * Time::cMicroseconds, "PT1M0.000032000S"},
+    };
+
+    for (const auto& testCase : testCases) {
+        LOG_DBG() << "Duration: " << testCase.duration;
+
+        EXPECT_STREQ(testCase.duration.ToISO8601String().CStr(), testCase.expected);
+    }
+}
+
 TEST_F(TimeTest, Add4Years)
 {
     Time now             = Time::Now();
@@ -27,8 +53,8 @@ TEST_F(TimeTest, Add4Years)
     LOG_INF() << "Time now: " << now;
     LOG_INF() << "Four years later: " << fourYearsLater;
 
-    EXPECT_EQ(now.UnixNano() + Years(4), fourYearsLater.UnixNano());
-    EXPECT_EQ(now.UnixNano() + Years(-4), fourYearsBefore.UnixNano());
+    EXPECT_EQ(now.UnixNano() + Years(4).Count(), fourYearsLater.UnixNano());
+    EXPECT_EQ(now.UnixNano() + Years(-4).Count(), fourYearsBefore.UnixNano());
 }
 
 TEST_F(TimeTest, Compare)
