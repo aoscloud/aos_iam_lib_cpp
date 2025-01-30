@@ -134,11 +134,6 @@ class Instance {
 public:
     /**
      * Creates instance.
-     */
-    Instance() = default;
-
-    /**
-     * Creates instance.
      *
      * @param config launcher configuration.
      * @param instanceInfo instance info.
@@ -250,6 +245,20 @@ public:
     Duration GetOfflineTTL() const { return mOfflineTTL; };
 
     /**
+     * Returns instance override env vars.
+     *
+     * @return const EnvVarsArray&.
+     */
+    const EnvVarsArray& GetOverrideEnvVars() const { return mOverrideEnvVars; };
+
+    /**
+     * Sets instance override env vars.
+     *
+     * @param envVars
+     */
+    void SetOverrideEnvVars(const Array<StaticString<cEnvVarNameLen>>& envVars) { mOverrideEnvVars = envVars; };
+
+    /**
      * Returns instances allocator.
      */
     static Allocator& GetAllocator() { return sAllocator; };
@@ -314,8 +323,7 @@ private:
     static constexpr auto cAllocatorSize
         = (sizeof(oci::RuntimeSpec) + sizeof(image::ImageParts)
               + Max(sizeof(networkmanager::InstanceNetworkParameters), sizeof(monitoring::InstanceMonitorParams),
-                  sizeof(oci::ImageSpec) + sizeof(oci::ServiceConfig)
-                      + sizeof(StaticArray<StaticString<cEnvVarNameLen>, cMaxNumEnvVariables>),
+                  sizeof(oci::ImageSpec) + sizeof(oci::ServiceConfig) + sizeof(EnvVarsArray),
                   sizeof(LayersStaticArray) + sizeof(layermanager::LayerData), sizeof(Mount) + sizeof(ResourceInfo),
                   sizeof(Mount) + sizeof(DeviceInfo) + sizeof(StaticArray<oci::LinuxDevice, cMaxNumHostDevices>)))
         * AOS_CONFIG_LAUNCHER_NUM_COOPERATE_LAUNCHES;
@@ -392,6 +400,7 @@ private:
     Error                              mRunError;
     bool                               mPermissionsRegistered = false;
     Duration                           mOfflineTTL            = 0;
+    EnvVarsArray                       mOverrideEnvVars;
 };
 
 } // namespace aos::sm::launcher

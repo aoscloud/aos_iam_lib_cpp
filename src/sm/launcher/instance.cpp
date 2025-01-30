@@ -203,7 +203,7 @@ Error Instance::BindHostDirs(oci::RuntimeSpec& runtimeSpec)
 
 Error Instance::CreateAosEnvVars(oci::RuntimeSpec& runtimeSpec)
 {
-    auto envVars = MakeUnique<StaticArray<StaticString<cEnvVarNameLen>, cMaxNumEnvVariables>>(&sAllocator);
+    auto                         envVars = MakeUnique<EnvVarsArray>(&sAllocator);
     StaticString<cEnvVarNameLen> envVar;
 
     if (auto err = envVar.Format("%s=%s", cEnvAosServiceID, mService->mServiceID.CStr()); !err.IsNone()) {
@@ -566,6 +566,10 @@ Error Instance::CreateLinuxSpec(
     }
 
     if (auto err = CreateAosEnvVars(runtimeSpec); !err.IsNone()) {
+        return err;
+    }
+
+    if (auto err = AddEnvVars(mOverrideEnvVars, runtimeSpec); !err.IsNone()) {
         return err;
     }
 
