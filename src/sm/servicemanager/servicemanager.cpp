@@ -150,7 +150,7 @@ Error ServiceManager::Stop()
     return ErrorEnum::eNone;
 }
 
-Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services)
+Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
 {
     LockGuard lock {mMutex};
 
@@ -162,55 +162,17 @@ Error ServiceManager::ProcessDesiredServices(const Array<ServiceInfo>& services)
         return err;
     }
 
-    auto desiredServices = MakeUnique<ServiceInfoStaticArray>(&mAllocator, services);
+    auto [desiredServices, err] = ProcessAlreadyInstalledServices(services, serviceStatuses);
+    if (!err.IsNone()) {
+        return err;
+    }
 
-    {
-        auto installedServices = MakeUnique<ServiceDataStaticArray>(&mAllocator);
-
-        if (auto err = mStorage->GetAllServices(*installedServices); !err.IsNone()) {
-            return err;
-        }
-
-        for (const auto& storageService : *installedServices) {
-            auto it = desiredServices->FindIf([&storageService](const ServiceInfo& info) {
-                return storageService.mServiceID == info.mServiceID && storageService.mVersion == info.mVersion;
-            });
-
-            if (it == desiredServices->end()) {
-                if (storageService.mState != ServiceStateEnum::eCached) {
-                    if (auto err = SetServiceState(storageService, ServiceStateEnum::eCached); !err.IsNone()) {
-                        return err;
-                    }
-                }
-
-                continue;
-            }
-
-            if (auto err = SetServiceState(storageService, ServiceStateEnum::eActive); !err.IsNone()) {
-                return err;
-            }
-
-            desiredServices->Erase(it);
-        }
+    err = InstallServices(*desiredServices, serviceStatuses);
+    if (!err.IsNone()) {
+        return err;
     }
 
     // Install new services
-
-    for (const auto& service : *desiredServices) {
-        auto err = mInstallPool.AddTask([this, &service](void*) {
-            if (auto err = InstallService(service); !err.IsNone()) {
-                LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID
-                          << ", version=" << service.mVersion << ", err=" << err;
-            }
-        });
-        if (!err.IsNone()) {
-            LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
-                      << ", err=" << err;
-        }
-    }
-
-    mInstallPool.Wait();
-    mInstallPool.Shutdown();
 
     LOG_DBG() << "Allocator: allocated=" << mAllocator.MaxAllocatedSize() << ", maxSize=" << mAllocator.MaxSize();
 #if AOS_CONFIG_THREAD_STACK_USAGE
@@ -286,12 +248,34 @@ Error ServiceManager::ValidateService(const ServiceData& service)
     }
 
     if (manifestDigest != service.mManifestDigest) {
-        return AOS_ERROR_WRAP(Error(ErrorEnum::eFailed, "manifest checksum mismatch"));
+        return AOS_ERROR_WRAP(Error(ErrorEnum::eInvalidChecksum, "manifest checksum mismatch"));
     }
 
     if (err = mImageHandler->ValidateService(service.mImagePath); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);
     }
+
+    return ErrorEnum::eNone;
+}
+
+Error ServiceManager::RemoveService(const ServiceData& service)
+{
+    if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
+    if (service.mState == ServiceStateEnum::eCached) {
+        auto [allocationId, err] = FormatAllocatorItemID(service);
+
+        if (!err.IsNone()) {
+            LOG_ERR() << "Can't format allocator item ID: serviceID=" << service.mServiceID
+                      << ", version=" << service.mVersion << ", err=" << err;
+        } else {
+            mServiceSpaceAllocator->RestoreOutdatedItem(allocationId);
+        }
+    }
+
+    mServiceSpaceAllocator->FreeSpace(service.mSize);
 
     return ErrorEnum::eNone;
 }
@@ -311,16 +295,13 @@ Error ServiceManager::RemoveItem(const String& id)
 
     mStorage->GetServiceVersions(serviceID, *services);
 
-    for (const auto& service : *services) {
-        if (service.mVersion == version) {
-            if (auto err = FS::RemoveAll(service.mImagePath); !err.IsNone()) {
-                return AOS_ERROR_WRAP(err);
-            }
+    auto it = services->FindIf([&version](const ServiceData& service) { return service.mVersion == version; });
+    if (it == services->end()) {
+        return AOS_ERROR_WRAP(ErrorEnum::eNotFound);
+    }
 
-            if (auto err = RemoveService(service); !err.IsNone()) {
-                return AOS_ERROR_WRAP(err);
-            }
-        }
+    if (auto err = RemoveServiceFromSystem(*it); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
     }
 
     return ErrorEnum::eNone;
@@ -329,6 +310,87 @@ Error ServiceManager::RemoveItem(const String& id)
 /***********************************************************************************************************************
  * Private
  **********************************************************************************************************************/
+
+RetWithError<UniquePtr<ServiceInfoStaticArray>> ServiceManager::ProcessAlreadyInstalledServices(
+    const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
+{
+    auto desiredServices   = MakeUnique<ServiceInfoStaticArray>(&mAllocator, services);
+    auto installedServices = MakeUnique<ServiceDataStaticArray>(&mAllocator);
+
+    if (auto err = mStorage->GetAllServices(*installedServices); !err.IsNone()) {
+        return {{}, err};
+    }
+
+    for (const auto& storageService : *installedServices) {
+        auto it = desiredServices->FindIf([&storageService](const ServiceInfo& info) {
+            return storageService.mServiceID == info.mServiceID && storageService.mVersion == info.mVersion;
+        });
+
+        if (auto err = serviceStatuses.EmplaceBack(
+                storageService.mServiceID, storageService.mVersion, ComponentStatusEnum::eInstalled);
+            !err.IsNone()) {
+            return {{}, err};
+        }
+
+        if (it == desiredServices->end()) {
+            if (storageService.mState != ServiceStateEnum::eCached) {
+                if (auto err = SetServiceState(storageService, ServiceStateEnum::eCached); !err.IsNone()) {
+                    return {{}, err};
+                }
+            }
+
+            continue;
+        }
+
+        if (auto err = SetServiceState(storageService, ServiceStateEnum::eActive); !err.IsNone()) {
+            return {{}, err};
+        }
+
+        desiredServices->Erase(it);
+
+        if (auto err = ValidateService(storageService); !err.IsNone()) {
+            serviceStatuses.Back().SetError(err);
+        }
+    }
+
+    return {Move(desiredServices), ErrorEnum::eNone};
+}
+
+Error ServiceManager::InstallServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses)
+{
+    for (const auto& service : services) {
+        auto err = serviceStatuses.EmplaceBack(service.mServiceID, service.mVersion, ComponentStatusEnum::eInstalling);
+        if (!err.IsNone()) {
+            return AOS_ERROR_WRAP(err);
+        }
+
+        auto& status = serviceStatuses.Back();
+
+        err = mInstallPool.AddTask([this, &service, &status](void*) {
+            if (auto err = InstallService(service); !err.IsNone()) {
+                LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID
+                          << ", version=" << service.mVersion << ", err=" << err;
+
+                status.SetError(err);
+
+                return;
+            }
+
+            status.mStatus = ComponentStatusEnum::eInstalled;
+        });
+        if (!err.IsNone()) {
+            LOG_ERR() << "Can't install service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
+                      << ", err=" << err;
+
+            status.SetError(err);
+        }
+    }
+
+    mInstallPool.Wait();
+    mInstallPool.Shutdown();
+
+    return ErrorEnum::eNone;
+}
 
 Error ServiceManager::RemoveDamagedServiceFolders(const Array<ServiceData>& services)
 {
@@ -341,7 +403,7 @@ Error ServiceManager::RemoveDamagedServiceFolders(const Array<ServiceData>& serv
 
         LOG_WRN() << "Service missing: imagePath=" << service.mImagePath;
 
-        if (auto err = RemoveService(service); !err.IsNone()) {
+        if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
             return AOS_ERROR_WRAP(err);
         }
     }
@@ -350,7 +412,7 @@ Error ServiceManager::RemoveDamagedServiceFolders(const Array<ServiceData>& serv
         const auto fullPath = FS::JoinPath(mConfig.mServicesDir, serviceDirIterator->mPath);
 
         if (services.FindIf([&fullPath](const ServiceData& service) { return service.mImagePath == fullPath; })
-            == services.end()) {
+            != services.end()) {
             continue;
         }
 
@@ -381,7 +443,7 @@ Error ServiceManager::RemoveOutdatedServices(const Array<ServiceData>& services)
 
         LOG_DBG() << "Service outdated: serviceID=" << service.mServiceID << ", version=" << service.mVersion;
 
-        if (auto err = RemoveService(service); !err.IsNone()) {
+        if (auto err = RemoveServiceFromSystem(service); !err.IsNone()) {
             return AOS_ERROR_WRAP(err);
         }
 
@@ -398,27 +460,14 @@ Error ServiceManager::RemoveOutdatedServices(const Array<ServiceData>& services)
     return ErrorEnum::eNone;
 }
 
-Error ServiceManager::RemoveService(const ServiceData& service)
+Error ServiceManager::RemoveServiceFromSystem(const ServiceData& service)
 {
-    LOG_INF() << "Remove service: serviceID=" << service.mServiceID << ", providerID=" << service.mProviderID
-              << ", version=" << service.mVersion << ", path=" << service.mImagePath;
+    LOG_DBG() << "Remove service: serviceID=" << service.mServiceID << ", version=" << service.mVersion
+              << ", path=" << service.mImagePath;
 
     if (auto err = FS::RemoveAll(service.mImagePath); !err.IsNone()) {
-        err = AOS_ERROR_WRAP(err);
+        return AOS_ERROR_WRAP(err);
     }
-
-    if (service.mState == ServiceStateEnum::eCached) {
-        auto [allocationId, err] = FormatAllocatorItemID(service);
-
-        if (!err.IsNone()) {
-            LOG_ERR() << "Can't format allocator item ID: serviceID=" << service.mServiceID
-                      << ", version=" << service.mVersion << ", err=" << err;
-        } else {
-            mServiceSpaceAllocator->RestoreOutdatedItem(allocationId);
-        }
-    }
-
-    mServiceSpaceAllocator->FreeSpace(service.mSize);
 
     if (auto err = mStorage->RemoveService(service.mServiceID, service.mVersion); !err.IsNone()) {
         return AOS_ERROR_WRAP(err);

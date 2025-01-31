@@ -190,9 +190,10 @@ public:
      * Processes desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    virtual Error ProcessDesiredServices(const Array<ServiceInfo>& services) = 0;
+    virtual Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) = 0;
 
     /**
      * Returns service item by service ID.
@@ -227,6 +228,14 @@ public:
      * @return Error.
      */
     virtual Error ValidateService(const ServiceData& service) = 0;
+
+    /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    virtual Error RemoveService(const ServiceData& service) = 0;
 
     /**
      * Destroys storage interface.
@@ -290,9 +299,10 @@ public:
      * Process desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    Error ProcessDesiredServices(const Array<ServiceInfo>& services) override;
+    Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) override;
 
     /**
      * Returns service item by service ID.
@@ -329,6 +339,14 @@ public:
     Error ValidateService(const ServiceData& service) override;
 
     /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    Error RemoveService(const ServiceData& service) override;
+
+    /**
      * Removes item.
      *
      * @param id item id.
@@ -342,9 +360,13 @@ private:
     static constexpr auto cImageBlobsFolder  = "blobs";
     static constexpr auto cAllocatorItemLen  = cServiceIDLen + cVersionLen + 1;
 
+    RetWithError<UniquePtr<ServiceInfoStaticArray>> ProcessAlreadyInstalledServices(
+        const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses);
+    Error InstallServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses);
+
     Error                                          RemoveDamagedServiceFolders(const Array<ServiceData>& services);
     Error                                          RemoveOutdatedServices(const Array<ServiceData>& services);
-    Error                                          RemoveService(const ServiceData& service);
+    Error                                          RemoveServiceFromSystem(const ServiceData& service);
     Error                                          InstallService(const ServiceInfo& service);
     Error                                          SetServiceState(const ServiceData& service, ServiceState state);
     RetWithError<StaticString<cFilePathLen>>       DigestToPath(const String& imagePath, const String& digest);

@@ -153,19 +153,48 @@ public:
      * Processes desired layers.
      *
      * @param desiredLayers desired layers.
+     * @param layerStatuses[out] layer statuses.
      * @return Error.
      */
-    Error ProcessDesiredLayers(const Array<aos::LayerInfo>& desiredLayers) override
+    Error ProcessDesiredLayers(const Array<aos::LayerInfo>& desiredLayers, Array<LayerStatus>& layerStatuses) override
     {
+        (void)layerStatuses;
+
         std::lock_guard lock {mMutex};
 
         mLayersData.clear();
 
         std::transform(
             desiredLayers.begin(), desiredLayers.end(), std::back_inserter(mLayersData), [](const LayerInfo& layer) {
-                return LayerData {layer.mLayerDigest, layer.mLayerID, layer.mVersion,
+                return LayerData {layer.mLayerDigest, layer.mLayerDigest, layer.mLayerID, layer.mVersion,
                     FS::JoinPath("/aos/layers", layer.mLayerDigest), "", Time::Now(), LayerStateEnum::eActive, 0};
             });
+
+        return ErrorEnum::eNone;
+    }
+
+    /**
+     * Validates layer.
+     *
+     * @param layer layer data.
+     * @return Error.
+     */
+    Error ValidateLayer(const LayerData& layer) override
+    {
+        (void)layer;
+
+        return ErrorEnum::eNone;
+    }
+
+    /**
+     * Removes layer.
+     *
+     * @param layer layer to remove.
+     * @return Error.
+     */
+    Error RemoveLayer(const LayerData& layer) override
+    {
+        (void)layer;
 
         return ErrorEnum::eNone;
     }

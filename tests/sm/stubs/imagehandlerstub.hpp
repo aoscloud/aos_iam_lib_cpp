@@ -126,9 +126,19 @@ public:
      */
     RetWithError<StaticString<oci::cMaxDigestLen>> CalculateDigest(const String& path) const override
     {
-        (void)path;
+        LockGuard lock(mMutex);
 
-        return {{}, ErrorEnum::eNone};
+        LOG_DBG() << "Calculate digest: path=" << path;
+
+        auto it = mDigestResults.find(path.CStr());
+
+        if (it == mDigestResults.end()) {
+            LOG_ERR() << "Digest not found: path=" << path;
+
+            return {{}, ErrorEnum::eNotFound};
+        }
+
+        return {it->second.c_str()};
     }
 
     /**
@@ -145,10 +155,27 @@ public:
         return mUnpackResults.Set(archivePath, unpackedPath);
     }
 
+    /**
+     * Sets calculate digest result.
+     *
+     * @param path path.
+     * @param digest digest.
+     * @return Error.
+     */
+    Error SetCalculateDigestResult(const String& path, const String& digest)
+    {
+        LockGuard lock(mMutex);
+
+        mDigestResults[path.CStr()] = digest.CStr();
+
+        return ErrorEnum::eNone;
+    }
+
 private:
     mutable Mutex                      mMutex;
     spaceallocator::SpaceAllocatorItf* mSpaceAllocator = nullptr;
     StaticMap<StaticString<cFilePathLen>, StaticString<cFilePathLen>, cMaxNumLayers + cMaxNumServices> mUnpackResults;
+    std::map<std::string, std::string>                                                                 mDigestResults;
 };
 
 } // namespace aos::sm::image

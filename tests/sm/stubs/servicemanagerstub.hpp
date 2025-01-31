@@ -162,10 +162,13 @@ public:
      * Processes desired services.
      *
      * @param services desired services.
+     * @param serviceStatuses[out] service statuses.
      * @return Error.
      */
-    Error ProcessDesiredServices(const Array<ServiceInfo>& services) override
+    Error ProcessDesiredServices(const Array<ServiceInfo>& services, Array<ServiceStatus>& serviceStatuses) override
     {
+        (void)serviceStatuses;
+
         std::lock_guard lock {mMutex};
 
         mServicesData.clear();
@@ -242,6 +245,19 @@ public:
      * @return Error.
      */
     Error ValidateService(const ServiceData& service) override
+    {
+        (void)service;
+
+        return ErrorEnum::eNone;
+    }
+
+    /**
+     * Removes service.
+     *
+     * @param service service to remove.
+     * @return Error.
+     */
+    Error RemoveService(const ServiceData& service) override
     {
         (void)service;
 
