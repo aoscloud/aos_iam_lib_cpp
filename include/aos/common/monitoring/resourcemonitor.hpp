@@ -72,6 +72,15 @@ public:
     Error StartInstanceMonitoring(const String& instanceID, const InstanceMonitorParams& monitoringConfig) override;
 
     /**
+     * Updates instance monitoring.
+     *
+     * @param instanceID instance ID.
+     * @param monitoringConfig monitoring config.
+     * @return Error.
+     */
+    Error UpdateInstanceRunState(const String& instanceID, InstanceRunState runState) override;
+
+    /**
      * Stops instance monitoring.
      *
      * @param instanceID instance ID.

@@ -131,6 +131,10 @@ Error Instance::Start()
         return AOS_ERROR_WRAP(runStatus.mError);
     }
 
+    if (auto err = mResourceMonitor.UpdateInstanceRunState(mInstanceID, mRunState); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
     return ErrorEnum::eNone;
 }
 
