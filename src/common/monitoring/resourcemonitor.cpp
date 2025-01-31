@@ -476,6 +476,8 @@ void ResourceMonitor::ProcessMonitoring()
             if (auto err = mResourceUsageProvider->GetInstanceMonitoringData(instanceID, instanceMonitoringData);
                 !err.IsNone()) {
                 LOG_ERR() << "Failed to get instance monitoring data: " << err;
+
+                continue;
             }
 
             instanceMonitoringData.mMonitoringData.mCPU = CPUToDMIPs(instanceMonitoringData.mMonitoringData.mCPU);
