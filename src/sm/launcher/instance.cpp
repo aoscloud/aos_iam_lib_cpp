@@ -119,16 +119,16 @@ Error Instance::Start()
         return err;
     }
 
+    if (auto err = SetupMonitoring(); !err.IsNone()) {
+        return AOS_ERROR_WRAP(err);
+    }
+
     auto runStatus = mRunner.StartInstance(mInstanceID, mRuntimeDir, {});
 
     mRunState = runStatus.mState;
 
     if (!runStatus.mError.IsNone()) {
         return AOS_ERROR_WRAP(runStatus.mError);
-    }
-
-    if (auto err = SetupMonitoring(); !err.IsNone()) {
-        return err;
     }
 
     return ErrorEnum::eNone;
